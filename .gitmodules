@@ -1,0 +1,4 @@
+[submodule "hashdb"]
+	path = hashdb
+	url = https://github.com/y0ug/hashdb.git
+	branch = python_lib
