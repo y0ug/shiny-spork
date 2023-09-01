@@ -1,3 +1,6 @@
+"""
+cat test.json | jq '.[].analysis[] | select(.analysis_vm_name != null) | select (.analysis_vm_name | contains("win10")) | .analysis_id' # noqa
+"""
 import sys
 import argparse
 import logging
@@ -72,7 +75,8 @@ class VMRayApi(object):
             logging.info(f"finding analysis for {sample['sample_id']}")
             data = self.api.call("GET",
                                  f"/rest/analysis/sample/{sample['sample_id']}")
-            out.append(data)
+            sample['analysis'] = data
+            out.append(sample)
         return out
 
     def download_analysis(self, analysis_id: int, filename: None | str = None) -> io.BytesIO:
@@ -131,10 +135,10 @@ class VMRayTools(object):
         parser.add_argument('command', help='Subcommand to run', choices=cmds)
         args = parser.parse_args(sys.argv[1:2])
 
-        server = os.environ['VMRAY_SERVER']
+        api_url = os.environ['VMRAY_API_URL']
         api_key = os.environ['VMRAY_API_KEY']
 
-        self.vmray = VMRayApi(server, api_key)
+        self.vmray = VMRayApi(api_url, api_key)
 
         self._argv = sys.argv[2:]
 
@@ -145,6 +149,40 @@ class VMRayTools(object):
         levels = [logging.WARNING, logging.INFO, logging.DEBUG]
         level = levels[min(verbose, len(levels) - 1)]
         logging.basicConfig(level=level)
+
+    def get_sample(self):
+        parser = argparse.ArgumentParser(description='Show sample information')
+        parser.add_argument("hash", type=str, help="hash of the file")
+        parser.add_argument('-v', '--verbose', action='count', default=0)
+
+        args = parser.parse_args(self._argv)
+        self._set_log_level(args.verbose)
+
+        samples = self.vmray.find_analysis(args.hash)
+        print(json.dumps(samples, indent=2))
+
+    def dl_analysis(self):
+        parser = argparse.ArgumentParser(description='Download a analysis archive or file')
+        parser.add_argument("analysis_id", type=str, help="analysis id")
+        parser.add_argument("-f", "--filename", type=str,
+                            help="analysis file if not set it download the archive")
+        parser.add_argument('-v', '--verbose', action='count', default=0)
+
+        args = parser.parse_args(self._argv)
+        self._set_log_level(args.verbose)
+
+        fp_dl = self.vmray.download_analysis(args.analysis_id, args.filename)
+
+        fn = f'{args.analysis_id}.zip'
+
+        if args.filename:
+            fn_filter = args.filename.replace('/', '_')
+            fn_filter = fn_filter.replace('\\', '_')
+            fn = f'{args.analysis_id}_{fn_filter}'
+
+        logging.info(f"writing file to {fn}")
+        with io.open(fn, "wb") as fobj:
+            fobj.write(fp_dl.read())
 
     def dl_sample(self):
         parser = argparse.ArgumentParser(description='Download a sample')
