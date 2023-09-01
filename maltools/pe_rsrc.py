@@ -10,7 +10,7 @@ import pefile
 import magic
 
 
-def res_print(entries, depth=0):
+def res_print(pe, entries, depth=0):
     for entry in entries:
         if hasattr(entry, 'directory'):
             print('\t'*depth, end='')
@@ -33,7 +33,7 @@ def res_print(entries, depth=0):
 def pe_list_resource(pe):
     if not hasattr(pe, 'DIRECTORY_ENTRY_RESOURCE'):
         return
-    res_print(pe.DIRECTORY_ENTRY_RESOURCE.entries)
+    res_print(pe, pe.DIRECTORY_ENTRY_RESOURCE.entries)
 
 
 # @ TODO rewrite pe_dump so it can take an ID path and dump it
@@ -46,7 +46,7 @@ def pe_dump_resource(pe):
     sys.stdout.buffer.write(data)
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("file", type=Path)
     parser.add_argument('-v', '--verbose', action='count', default=0)
@@ -62,3 +62,7 @@ if __name__ == "__main__":
         pe_dump_resource(pe)
     else:
         pe_list_resource(pe)
+
+
+if __name__ == "__main__":
+    main()

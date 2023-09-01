@@ -8,7 +8,8 @@ from pathlib import Path
 
 VT_API_KEY = os.environ['VT_API_KEY']
 
-if __name__ == "__main__":
+
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("hash")
     parser.add_argument('-v', '--verbose', action='count', default=0)
@@ -29,3 +30,7 @@ if __name__ == "__main__":
         logging.error(ex.message)
         fn.unlink()
     client.close()
+
+
+if __name__ == "__main__":
+    main()

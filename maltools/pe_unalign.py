@@ -19,6 +19,10 @@ def pe_unalign(data):
     return clean_pe
 
 
-if __name__ == "__main__":
+def main():
     data = open(sys.argv[1], 'rb').read()
     sys.stdout.buffer.write(pe_unalign(data))
+
+
+if __name__ == "__main__":
+    main()
