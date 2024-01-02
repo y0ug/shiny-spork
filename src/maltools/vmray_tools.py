@@ -1,13 +1,11 @@
-"""
-cat test.json | jq '.[].analysis[] | select(.analysis_vm_name != null) | select (.analysis_vm_name | contains("win10")) | .analysis_id' # noqa
-"""
-import sys
+""" cat test.json | jq '.[].analysis[] | select(.analysis_vm_name != null) | select (.analysis_vm_name | contains("win10")) | .analysis_id' # noqa """
 import argparse
-import logging
-import json
 import io
-import time
+import json
+import logging
 import os
+import sys
+import time
 from pathlib import Path
 
 from vmray.rest_api import VMRayRESTAPI, VMRayRESTAPIError
@@ -22,6 +20,7 @@ class UnicodeFileType(argparse.FileType):
             sanitized_str = str(string)
         except UnicodeDecodeError:
             import ast
+
             sanitized_str = str(ast.literal_eval("u" + repr(string)))
 
         return argparse.FileType.__call__(self, sanitized_str)
@@ -35,17 +34,21 @@ class VMRayExNotSupHash(VMRayEx):
     pass
 
 
+class VMRayExNotFound(VMRayEx):
+    pass
+
+
 class VMRayApi(object):
     def __init__(self, server: str, api_key: str, verify_ssl: bool = True):
         self.api = VMRayRESTAPI(server, api_key, verify_ssl)
 
     def _hash_type(self, val: str) -> str:
         if len(val) == 32:
-            t = 'md5'
-        elif len(val) == 44:
-            t = 'sha1'
+            t = "md5"
+        elif len(val) == 40:
+            t = "sha1"
         elif len(val) == 64:
-            t = 'sha256'
+            t = "sha256"
         else:
             raise VMRayExNotSupHash()
         return t
@@ -63,9 +66,12 @@ class VMRayApi(object):
 
     def download_sample(self, hash_value: str) -> io.BytesIO:
         samples = self.get_sample(hash_value)
+        if len(samples) == 0:
+            raise VMRayExNotFound(f"sample {hash_value} not found")
         logging.info(f"downloading {samples[0]['sample_id']}")
         data = self.api.call(
-            "GET", "/rest/sample/{}/file".format(samples[0]["sample_id"]), raw_data=True)
+            "GET", "/rest/sample/{}/file".format(samples[0]["sample_id"]), raw_data=True
+        )
         return data
 
     def find_analysis(self, hash_value: str) -> list[dict]:
@@ -73,28 +79,29 @@ class VMRayApi(object):
         out = []
         for sample in samples:
             logging.info(f"finding analysis for {sample['sample_id']}")
-            data = self.api.call("GET",
-                                 f"/rest/analysis/sample/{sample['sample_id']}")
-            sample['analysis'] = data
+            data = self.api.call("GET", f"/rest/analysis/sample/{sample['sample_id']}")
+            sample["analysis"] = data
             out.append(sample)
         return out
 
-    def download_analysis(self, analysis_id: int, filename: None | str = None) -> io.BytesIO:
+    def download_analysis(
+        self, analysis_id: int, filename: None | str = None
+    ) -> io.BytesIO:
         if filename:
             logging.info(f"downloading {filename} for {analysis_id}")
-            data = self.api.call("GET",
-                                 f"/rest/analysis/{analysis_id}/archive/{filename}",
-                                 raw_data=True)
+            data = self.api.call(
+                "GET", f"/rest/analysis/{analysis_id}/archive/{filename}", raw_data=True
+            )
         else:
             logging.info(f"downloading archive for {analysis_id}")
-            data = self.api.call("GET",
-                                 f"/rest/analysis/{analysis_id}/archive",
-                                 raw_data=True)
+            data = self.api.call(
+                "GET", f"/rest/analysis/{analysis_id}/archive", raw_data=True
+            )
         return data
 
     def submit(self, filename: Path, wait: bool = False, **kwargs) -> dict:
         params = kwargs
-        params['sample_file'] = filename
+        params["sample_file"] = filename
 
         logging.info(f"submitting sample {filename}")
         data = self.api.call("POST", "/rest/sample/submit", params)
@@ -110,7 +117,8 @@ class VMRayApi(object):
             for submission in list(pending_submissions):
                 try:
                     submission_data = self.api.call(
-                        "GET", f"/rest/submission/{submission['submission_id']}")
+                        "GET", f"/rest/submission/{submission['submission_id']}"
+                    )
                     if submission_data["submission_finished"]:
                         pending_submissions.remove(submission)
                     else:
@@ -129,14 +137,15 @@ class VMRayTools(object):
     _args: list[str]
 
     def __init__(self):
-        cmds = [c for c in dir(self) if not c.startswith('_')]
+        cmds = [c for c in dir(self) if not c.startswith("_")]
         parser = argparse.ArgumentParser(
-            description='Ticket/Report multitools for malware analysis')
-        parser.add_argument('command', help='Subcommand to run', choices=cmds)
+            description="Ticket/Report multitools for malware analysis"
+        )
+        parser.add_argument("command", help="Subcommand to run", choices=cmds)
         args = parser.parse_args(sys.argv[1:2])
 
-        api_url = os.environ['VMRAY_API_URL']
-        api_key = os.environ['VMRAY_API_KEY']
+        api_url = os.environ["VMRAY_API_URL"]
+        api_key = os.environ["VMRAY_API_KEY"]
 
         self.vmray = VMRayApi(api_url, api_key)
 
@@ -145,15 +154,15 @@ class VMRayTools(object):
         getattr(self, args.command)()
 
     def _set_log_level(self, verbose: int):
-        '''Set log level at 0 warning, 1 info, 2 debug'''
+        """Set log level at 0 warning, 1 info, 2 debug"""
         levels = [logging.WARNING, logging.INFO, logging.DEBUG]
         level = levels[min(verbose, len(levels) - 1)]
         logging.basicConfig(level=level)
 
     def get_sample(self):
-        parser = argparse.ArgumentParser(description='Show sample information')
+        parser = argparse.ArgumentParser(description="Show sample information")
         parser.add_argument("hash", type=str, help="hash of the file")
-        parser.add_argument('-v', '--verbose', action='count', default=0)
+        parser.add_argument("-v", "--verbose", action="count", default=0)
 
         args = parser.parse_args(self._argv)
         self._set_log_level(args.verbose)
@@ -162,70 +171,104 @@ class VMRayTools(object):
         print(json.dumps(samples, indent=2))
 
     def dl_analysis(self):
-        parser = argparse.ArgumentParser(description='Download a analysis archive or file')
+        parser = argparse.ArgumentParser(
+            description="Download a analysis archive or file"
+        )
         parser.add_argument("analysis_id", type=str, help="analysis id")
-        parser.add_argument("-f", "--filename", type=str,
-                            help="analysis file if not set it download the archive")
-        parser.add_argument('-v', '--verbose', action='count', default=0)
+        parser.add_argument(
+            "-f",
+            "--filename",
+            type=str,
+            help="analysis file if not set it download the archive",
+        )
+        parser.add_argument("-v", "--verbose", action="count", default=0)
 
         args = parser.parse_args(self._argv)
         self._set_log_level(args.verbose)
 
         fp_dl = self.vmray.download_analysis(args.analysis_id, args.filename)
 
-        fn = f'{args.analysis_id}.zip'
+        fn = f"{args.analysis_id}.zip"
 
         if args.filename:
-            fn_filter = args.filename.replace('/', '_')
-            fn_filter = fn_filter.replace('\\', '_')
-            fn = f'{args.analysis_id}_{fn_filter}'
+            fn_filter = args.filename.replace("/", "_")
+            fn_filter = fn_filter.replace("\\", "_")
+            fn = f"{args.analysis_id}_{fn_filter}"
 
         logging.info(f"writing file to {fn}")
         with io.open(fn, "wb") as fobj:
             fobj.write(fp_dl.read())
 
     def dl_sample(self):
-        parser = argparse.ArgumentParser(description='Download a sample')
+        parser = argparse.ArgumentParser(description="Download a sample")
         parser.add_argument("hash", type=str, help="hash of the file")
-        parser.add_argument('-v', '--verbose', action='count', default=0)
+        parser.add_argument("-v", "--verbose", action="count", default=0)
 
         args = parser.parse_args(self._argv)
         self._set_log_level(args.verbose)
 
         fp_sample = self.vmray.download_sample(args.hash)
-        fn = f'{args.hash.lower()}.zip'
+        fn = f"{args.hash.lower()}.zip"
         logging.info(f"writing sample to {fn}")
         with io.open(fn, "wb") as fobj:
             fobj.write(fp_sample.read())
 
     def submit(self):
-        parser = argparse.ArgumentParser(description='Submit sample')
-        parser.add_argument("sample_file", type=UnicodeFileType("rb"), help="Path to sample file")
-        parser.add_argument('-v', '--verbose', action='count', default=0)
+        parser = argparse.ArgumentParser(description="Submit sample")
+        parser.add_argument(
+            "sample_file", type=UnicodeFileType("rb"), help="Path to sample file"
+        )
+        parser.add_argument("-v", "--verbose", action="count", default=0)
         parser.add_argument("--archive_action", type=str, help="Archive action")
         parser.add_argument("--archive_password", type=str, help="Archive password")
         parser.add_argument("--cmd_line", type=str, help="Command line")
         parser.add_argument("--comment", type=str, help="Submission comment")
-        parser.add_argument("--compound_sample", action="store_true",
-                            help="Treat sample as compound sample")
-        parser.add_argument("--no_compound_sample", action="store_false", dest="compound_sample",
-                            help="Do not treat sample file as compound sample")
+        parser.add_argument(
+            "--compound_sample",
+            action="store_true",
+            help="Treat sample as compound sample",
+        )
+        parser.add_argument(
+            "--no_compound_sample",
+            action="store_false",
+            dest="compound_sample",
+            help="Do not treat sample file as compound sample",
+        )
         parser.add_argument("--entry_point", type=str, help="Entry point")
         parser.add_argument("--jobrule_entries", type=str, help="Jobrule entries")
-        parser.add_argument("--prescript_file", type=UnicodeFileType("rb"),
-                            help="Path to prescript file")
-        parser.add_argument("--reanalyze", action="store_true",
-                            help="Reanalyze sample if analyses already exist")
-        parser.add_argument("--no_reanalyze", action="store_false", dest="reanalyze",
-                            help="Reanalyze sample if analyses already exist")
+        parser.add_argument(
+            "--prescript_file",
+            type=UnicodeFileType("rb"),
+            help="Path to prescript file",
+        )
+        parser.add_argument(
+            "--reanalyze",
+            action="store_true",
+            help="Reanalyze sample if analyses already exist",
+        )
+        parser.add_argument(
+            "--no_reanalyze",
+            action="store_false",
+            dest="reanalyze",
+            help="Reanalyze sample if analyses already exist",
+        )
         parser.add_argument("--sample_type", type=str, help="Use this sample type")
-        parser.add_argument("--shareable", action="store_true",
-                            help="Sample can be shared with public")
-        parser.add_argument("--not_shareable", action="store_false", dest="shareable",
-                            help="Sample cannot be shared with public sample")
+        parser.add_argument(
+            "--shareable", action="store_true", help="Sample can be shared with public"
+        )
+        parser.add_argument(
+            "--not_shareable",
+            action="store_false",
+            dest="shareable",
+            help="Sample cannot be shared with public sample",
+        )
         parser.add_argument("--user_config", type=str, help="User configuration")
-        parser.add_argument("--wait", "-w", action="store_true",
-                            help="Wait for jobs to finish before exiting")
+        parser.add_argument(
+            "--wait",
+            "-w",
+            action="store_true",
+            help="Wait for jobs to finish before exiting",
+        )
 
         args = parser.parse_args(self._argv)
         self._set_log_level(args.verbose)
@@ -263,7 +306,7 @@ class VMRayTools(object):
 
 
 def main():
-    '''main function'''
+    """main function"""
     VMRayTools()
 
 
